@@ -1,10 +1,4 @@
-﻿#nullable disable
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using myTestWork.Data;
 using myTestWork.Models;
@@ -13,7 +7,7 @@ namespace myTestWork.Controllers
 {
     [ApiController]
     [ApiVersion("1.0")]
-    [Route("api/v{version:apiVersion}/[controller]")]
+    [Route("api/v1/[controller]")]
     [Produces("application/json")]
     public class PersonController : ControllerBase
     {
@@ -22,31 +16,48 @@ namespace myTestWork.Controllers
         public PersonController(myTestWorkContext context)
         {
             _context = context;
+            context.Database.Migrate();
         }
 
-        // GET: api/v1/Person
+        /// GET: api/v1/Person
         /// <summary>
         ///     Get all persons
         /// </summary>
         /// <returns>
         ///     Return collection of Person objects
         /// </returns>
-        
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<Person>>> GetPerson()
-        {
-            List<Person> persons = _context.Person.ToList();
 
-            foreach (var person in persons)
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<PersonRequestDTO>>> GetPerson()
+        {
+            List<PersonRequestDTO> result = await _context.Person.Select(x => new PersonRequestDTO()
             {
-                person.Skills = await _context.Skill
-                    .Where(p => p.PersonID == person.PersonID)
-                    .ToListAsync();
-            }
-            return persons;
+                PersonID = x.PersonID,
+                Name = x.Name,
+                DisplayName = x.DisplayName,
+                Skills = _context.Skill.Where(p => p.PersonID == x.PersonID)
+                .Select(s => new SkillRequestDTO()
+                {
+                    SkillID = s.SkillID,
+                    Name = s.Name,
+                    Level = s.Level
+                }).ToList()
+            }).ToListAsync();
+
+            //List<Person> persons = _context.Person.ToList();
+
+            //foreach (var person in persons)
+            //{
+            //    person.Skills = await _context.Skill
+            //        .Where(p => p.PersonID == person.PersonID)
+            //        .ToListAsync();
+            //}
+
+            //return persons;
+            return Ok(result);
         }
 
-        // GET: api/v1/Person/5
+        /// GET: api/v1/Person/5
         /// <summary>
         ///     Get one person with id
         /// </summary>
@@ -55,27 +66,40 @@ namespace myTestWork.Controllers
         ///     Return Person object
         /// </returns>
         [HttpGet("{id}")]
-        public async Task<ActionResult<Person>> GetPerson(long? id)
+        public async Task<ActionResult<PersonRequestDTO>> GetPerson(long? id)
         {
             if (id == null)
             {
                 return BadRequest();
             }
 
-            var person = await _context.Person.FindAsync(id);
+            Person? person = await _context.Person.FindAsync(id);
 
             if (person == null)
             {
                 return NotFound();
             }
 
-            person.Skills = await _context.Skill.Where(p => p.PersonID == person.PersonID).ToListAsync();
-            
-            
-            return person;
+            PersonRequestDTO result = new PersonRequestDTO()
+            {
+                PersonID = person.PersonID,
+                Name = person.Name,
+                DisplayName = person.DisplayName,
+                Skills = await _context.Skill.Where(p => p.PersonID == person.PersonID)
+                .Select(p => new SkillRequestDTO()
+                {
+                    SkillID = p.SkillID,
+                    Name = p.Name,
+                    Level = p.Level
+                }).ToListAsync()
+            };
+            //person.Skills = await _context.Skill.Where(p => p.PersonID == person.PersonID).ToListAsync();
+
+
+            return Ok(result);
         }
 
-        // PUT: api/v1/Person/5
+        /// PUT: api/v1/Person/5
         /// <summary>
         ///     Updating person data
         /// </summary>
@@ -83,41 +107,64 @@ namespace myTestWork.Controllers
         /// <param name="person"></param>
         /// <returns></returns>
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutPerson(long id, Person person)
+        public async Task<IActionResult> PutPerson(long id, PersonRequestDTO person)
         {
             if (id != person.PersonID)
             {
                 return BadRequest();
             }
-            
-            // Remove all old skills and add new skill to DB 
-            _context.Skill.RemoveRange(_context.Skill.Where(p => p.PersonID == person.PersonID).ToArray());
-            foreach(var item in person.Skills)
-            {   
-                await _context.Skill.AddAsync(item);
+
+            Person? oldPerson = await _context.Person.FindAsync(id);
+            if (oldPerson == null)
+            {
+                return NotFound();
             }
 
-            _context.Entry(person).State = EntityState.Modified;
-            try
+            oldPerson.Name = person.Name;
+            oldPerson.DisplayName = person.DisplayName;
+            foreach (SkillRequestDTO skill in person.Skills)
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!PersonExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
+                Skill? oldSkill = await _context.Skill.
+                    Where(p => (p.PersonID == person.PersonID) && (p.SkillID == skill.SkillID))
+                    .SingleOrDefaultAsync();
 
-            return NoContent();
+                if (oldSkill == null)
+                {
+                    return BadRequest($"SkillID {skill.SkillID} is invalid");
+                }
+
+                oldSkill.Name = skill.Name;
+                oldSkill.Level = skill.Level;
+            }
+            await _context.SaveChangesAsync();
+            return Ok();
+
+            //// Remove all old skills and add new skill to DB 
+            //_context.Skill.RemoveRange(_context.Skill.Where(p => p.PersonID == person.PersonID).ToArray());
+            //foreach(var item in person.Skills)
+            //{   
+            //    await _context.Skill.AddAsync(item);
+            //}
+
+            //_context.Entry(person).State = EntityState.Modified;
+            //try
+            //{
+            //    await _context.SaveChangesAsync();
+            //}
+            //catch (DbUpdateConcurrencyException)
+            //{
+            //    if (!PersonExists(id))
+            //    {
+            //        return NotFound();
+            //    }
+            //    else
+            //    {
+            //        throw;
+            //    }
+            //}
         }
 
-        // POST: api/v1/Person
+        /// POST: api/v1/Person
         /// <summary>
         /// Add new person
         /// </summary>
@@ -126,21 +173,36 @@ namespace myTestWork.Controllers
         ///     Return GET request for new Person object
         /// </returns>
         [HttpPost]
-        public async Task<ActionResult<Person>> PostPerson(Person person)
+        public async Task<ActionResult<PersonRequestDTO>> PostPerson(PersonCreateDTO person)
         {
-            _context.Person.Add(person);
-            foreach (var skill in person.Skills)
+            Person newPerson = new Person()
             {
-                _context.Skill.Add(skill);
-            }
-
-
+                Name = person.Name,
+                DisplayName = person.DisplayName,
+                Skills = new List<Skill>()
+            };
+            await _context.Person.AddAsync(newPerson);
             await _context.SaveChangesAsync();
 
-            return await GetPerson(person.PersonID);
+            foreach (SkillCreateDTO skill in person.Skills)
+            {
+                Skill temp = new Skill
+                {
+                    Name = skill.Name,
+                    Level = skill.Level,
+                    PersonID = newPerson.PersonID,
+                    Person = newPerson
+                };
+
+                await _context.AddAsync(temp);
+                //newPerson.Skills.Add(temp);
+            }
+            await _context.SaveChangesAsync();
+
+            return await GetPerson(newPerson.PersonID);
         }
 
-        // DELETE: api/v1/Person/5
+        /// DELETE: api/v1/Person/5
         /// <summary>
         /// Delete person
         /// </summary>
@@ -149,7 +211,7 @@ namespace myTestWork.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeletePerson(long id)
         {
-            var person = await _context.Person.FindAsync(id);
+            Person? person = await _context.Person.FindAsync(id);
             if (person == null)
             {
                 return NotFound();
@@ -158,7 +220,7 @@ namespace myTestWork.Controllers
             _context.Person.Remove(person);
             await _context.SaveChangesAsync();
 
-            return NoContent();
+            return Ok();
         }
 
         private bool PersonExists(long id)
