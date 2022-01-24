@@ -16,7 +16,6 @@ namespace myTestWork.Controllers
         public PersonController(myTestWorkContext context)
         {
             _context = context;
-            context.Database.Migrate();
         }
 
         /// GET: api/v1/Person
@@ -93,8 +92,6 @@ namespace myTestWork.Controllers
                     Level = p.Level
                 }).ToListAsync()
             };
-            //person.Skills = await _context.Skill.Where(p => p.PersonID == person.PersonID).ToListAsync();
-
 
             return Ok(result);
         }
@@ -122,46 +119,21 @@ namespace myTestWork.Controllers
 
             oldPerson.Name = person.Name;
             oldPerson.DisplayName = person.DisplayName;
+
+            _context.Skill.RemoveRange(_context.Skill.Where(p => p.PersonID == person.PersonID).ToList());
+
             foreach (SkillRequestDTO skill in person.Skills)
             {
-                Skill? oldSkill = await _context.Skill.
-                    Where(p => (p.PersonID == person.PersonID) && (p.SkillID == skill.SkillID))
-                    .SingleOrDefaultAsync();
-
-                if (oldSkill == null)
+                await _context.Skill.AddAsync(new Skill
                 {
-                    return BadRequest($"SkillID {skill.SkillID} is invalid");
-                }
-
-                oldSkill.Name = skill.Name;
-                oldSkill.Level = skill.Level;
+                    Name = skill.Name,
+                    Level = skill.Level,
+                    PersonID = oldPerson.PersonID,
+                    Person = oldPerson
+                });
             }
             await _context.SaveChangesAsync();
             return Ok();
-
-            //// Remove all old skills and add new skill to DB 
-            //_context.Skill.RemoveRange(_context.Skill.Where(p => p.PersonID == person.PersonID).ToArray());
-            //foreach(var item in person.Skills)
-            //{   
-            //    await _context.Skill.AddAsync(item);
-            //}
-
-            //_context.Entry(person).State = EntityState.Modified;
-            //try
-            //{
-            //    await _context.SaveChangesAsync();
-            //}
-            //catch (DbUpdateConcurrencyException)
-            //{
-            //    if (!PersonExists(id))
-            //    {
-            //        return NotFound();
-            //    }
-            //    else
-            //    {
-            //        throw;
-            //    }
-            //}
         }
 
         /// POST: api/v1/Person
@@ -195,7 +167,6 @@ namespace myTestWork.Controllers
                 };
 
                 await _context.AddAsync(temp);
-                //newPerson.Skills.Add(temp);
             }
             await _context.SaveChangesAsync();
 
@@ -221,11 +192,6 @@ namespace myTestWork.Controllers
             await _context.SaveChangesAsync();
 
             return Ok();
-        }
-
-        private bool PersonExists(long id)
-        {
-            return _context.Person.Any(e => e.PersonID == id);
         }
     }
 }

@@ -9,6 +9,7 @@ namespace myTestWork.Data
         public myTestWorkContext(DbContextOptions<myTestWorkContext> options)
             : base(options)
         {
+            this.Database.Migrate();
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
